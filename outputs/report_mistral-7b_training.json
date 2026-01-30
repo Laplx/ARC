@@ -1,0 +1,102 @@
+{
+  "metrics": {
+    "total": 1,
+    "scored": 1,
+    "mean_score": 0.0
+  },
+  "failures": {
+    "failure_count": 0
+  },
+  "records": [
+    {
+      "task_id": "00576224",
+      "metrics": {
+        "has_truth": true,
+        "scored": true,
+        "score": 0.0
+      },
+      "prediction": {
+        "grid": [
+          [
+            9,
+            8,
+            9,
+            8,
+            9,
+            8
+          ],
+          [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ],
+          [
+            9,
+            8,
+            9,
+            8,
+            9,
+            8
+          ],
+          [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ]
+        ],
+        "raw": "<s> <|im_start|>user\n79\n43\n<|im_end|>\n<|im_start|>assistant\n797979\n434343\n979797\n343434\n797979\n434343\n<|im_end|>\n<|im_start|>user\n86\n64\n<|im_end|>\n<|im_start|>assistant\n868686\n646464\n686868\n464646\n868686\n646464\n<|im_end|>\n<|im_start|>user\n32\n78\n<|im_end|>\n<|im_start|>assistant\n323232\n787878\n323232\n787878\n<|im_end|>\n<|im_start|>user\n56\n45\n<|im_end|>\n<|im_start|>assistant\n565656\n454545\n565656\n454545\n<|im_end|>\n<|im_start|>user\n89\n47\n<|im_end|>\n<|im_start|>assistant\n898989\n474747\n898989\n474747\n<|im_end|>\n<|im_start|>user\n98\n44\n<|im_end|>\n<|im_start|>assistant\n989898\n444444\n989898\n444444\n<|im_end|>\n<|im_start|>user\n77\n"
+      },
+      "candidates": [
+        {
+          "grid": [
+            [
+              9,
+              8,
+              9,
+              8,
+              9,
+              8
+            ],
+            [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ],
+            [
+              9,
+              8,
+              9,
+              8,
+              9,
+              8
+            ],
+            [
+              4,
+              4,
+              4,
+              4,
+              4,
+              4
+            ]
+          ],
+          "raw": "<s> <|im_start|>user\n79\n43\n<|im_end|>\n<|im_start|>assistant\n797979\n434343\n979797\n343434\n797979\n434343\n<|im_end|>\n<|im_start|>user\n86\n64\n<|im_end|>\n<|im_start|>assistant\n868686\n646464\n686868\n464646\n868686\n646464\n<|im_end|>\n<|im_start|>user\n32\n78\n<|im_end|>\n<|im_start|>assistant\n323232\n787878\n323232\n787878\n<|im_end|>\n<|im_start|>user\n56\n45\n<|im_end|>\n<|im_start|>assistant\n565656\n454545\n565656\n454545\n<|im_end|>\n<|im_start|>user\n89\n47\n<|im_end|>\n<|im_start|>assistant\n898989\n474747\n898989\n474747\n<|im_end|>\n<|im_start|>user\n98\n44\n<|im_end|>\n<|im_start|>assistant\n989898\n444444\n989898\n444444\n<|im_end|>\n<|im_start|>user\n77\n"
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "model_id": "mistralai/Mistral-7B-Instruct-v0.3",
+    "model_key": "mistral-7b",
+    "dataset_root": "data",
+    "split": "training"
+  }
+}

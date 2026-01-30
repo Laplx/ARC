@@ -1,0 +1,11 @@
+.vscode/
+.serena/
+.venv/
+.codex/
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/
+*.log
+*.tmp
+*.temp

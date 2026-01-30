@@ -1,5 +1,5 @@
 ﻿"""Model adapters."""
 
-from .modelscope_textgen import ModelScopeTextGenerator
+from .huggingface_textgen import HuggingFaceTextGenerator
 
-__all__ = ["ModelScopeTextGenerator"]
+__all__ = ["HuggingFaceTextGenerator"]

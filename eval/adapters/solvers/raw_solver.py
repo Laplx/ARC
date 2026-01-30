@@ -22,7 +22,8 @@ class RawSolver(Solver):
         for index in range(len(tests)):
             prompt = self._codec.serialize_task(task, test_index=index)
             output = self._model.predict(prompt, context=context)
-            grid = self._codec.deserialize_grid(_strip_prompt(output, prompt))
+            snippet = _extract_assistant_content(output, prompt)
+            grid = self._codec.deserialize_grid(snippet)
             if grid is None:
                 candidates.append({})
             else:
@@ -31,7 +32,12 @@ class RawSolver(Solver):
         return candidates
 
 
-def _strip_prompt(text: str, prompt: str) -> str:
+def _extract_assistant_content(text: str, prompt: str) -> str:
     if text.startswith(prompt):
-        return text[len(prompt) :]
+        text = text[len(prompt) :]
+
+    end_markers = ["<|im_end|>", "<|im_start|>user"]
+    end_positions = [text.find(mark) for mark in end_markers if text.find(mark) != -1]
+    if end_positions:
+        text = text[: min(end_positions)]
     return text
