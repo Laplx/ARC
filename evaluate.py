@@ -8,15 +8,15 @@ from eval import failure, metrics, postprocess, runner, visualize
 from eval.adapters.architects import NVARCArchitect
 from eval.adapters.codec import GridCodec
 from eval.adapters.datasets import ARCDataset
-from eval.adapters.models import ModelScopeTextGenerator
+from eval.adapters.models import HuggingFaceTextGenerator
 from eval.adapters.solvers import ArchitectSolver, RawSolver
 
 
 MODEL_REGISTRY = {
-    "mistral-7b": "modelscope/Mistral-7B-v0.1",
-    "qwen3-4b-thinking": "Qwen/Qwen3-4B-Thinking",
-    "llama-3.2-3b": "LLM-Research/Llama-3.2-3B",
-    "llama-3.2-8b": "LLM-Research/Llama-3.2-8B",
+    "mistral-7b": "mistralai/Mistral-7B-Instruct-v0.3",
+    "qwen3-4b-thinking": "Qwen/Qwen3-4B-Thinking-2507",
+    "llama-3.2-3b": "meta-llama/Llama-3.2-3B",
+    "deepseek-qwen-7b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
 }
 
 
@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="ARC baseline evaluation")
     parser.add_argument("--data-root", default="data", help="dataset root")
     parser.add_argument("--split", default="evaluation", choices=["training", "evaluation"])
-    parser.add_argument("--model", default="mistral-7b", help="model key or full ModelScope id")
+    parser.add_argument("--model", default="mistral-7b", help="model key or full Hugging Face id")
     parser.add_argument("--max-tasks", type=int, default=0, help="limit tasks (0 for all)")
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--output-dir", default="outputs")
@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
 
     dataset = ARCDataset(root=args.data_root, split=args.split, max_tasks=args.max_tasks)
     codec = GridCodec()
-    model = ModelScopeTextGenerator(model_id=model_id, max_new_tokens=args.max_new_tokens)
+    model = HuggingFaceTextGenerator(model_id=model_id, max_new_tokens=args.max_new_tokens)
 
     base_solver = RawSolver(model=model, codec=codec)
     solver = base_solver
@@ -59,6 +59,8 @@ def main(argv: list[str] | None = None) -> int:
         "get_truth": _get_truth,
         "get_task_id": _get_task_id,
         "output_dir": args.output_dir,
+        "model_id": model_id,
+        "model_key": args.model,
     }
 
     results = runner.run(

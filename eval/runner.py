@@ -99,6 +99,12 @@ def run(
         "metrics": summary,
         "failures": failure_summary,
         "records": task_records,
+        "meta": {
+            "model_id": cfg.get("model_id") if isinstance(cfg, Mapping) else None,
+            "model_key": cfg.get("model_key") if isinstance(cfg, Mapping) else None,
+            "dataset_root": dataset_info.get("root"),
+            "split": dataset_info.get("split"),
+        },
     }
 
     artifacts = []
