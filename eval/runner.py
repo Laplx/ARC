@@ -98,12 +98,14 @@ def run(
     reports = {
         "metrics": summary,
         "failures": failure_summary,
+        "failure_records": failures,
         "records": task_records,
         "meta": {
             "model_id": cfg.get("model_id") if isinstance(cfg, Mapping) else None,
             "model_key": cfg.get("model_key") if isinstance(cfg, Mapping) else None,
             "dataset_root": dataset_info.get("root"),
             "split": dataset_info.get("split"),
+            "viz_failures": cfg.get("viz_failures") if isinstance(cfg, Mapping) else False,
         },
     }
 

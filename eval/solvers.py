@@ -1,4 +1,4 @@
-﻿"""Architect wrapper solver."""
+﻿"""Solvers."""
 
 from __future__ import annotations
 
@@ -8,6 +8,31 @@ from typing import Mapping
 import torch
 
 from eval.interfaces import Candidate, Prediction, Solver
+
+
+class RawSolver(Solver):
+    def __init__(self, *, model, codec) -> None:
+        self._model = model
+        self._codec = codec
+
+    def solve(self, task, *, context: Mapping[str, object] | None = None) -> Prediction:
+        tests = task.get("test", [])
+        candidates: list[Candidate] = []
+
+        if not tests:
+            return candidates
+
+        for index in range(len(tests)):
+            prompt = self._codec.serialize_task(task, test_index=index)
+            output = self._model.predict(prompt, context=context)
+            snippet = _extract_assistant_content(output, prompt)
+            grid = self._codec.deserialize_grid(snippet)
+            if grid is None:
+                candidates.append({})
+            else:
+                candidates.append({"grid": grid, "raw": output})
+
+        return candidates
 
 
 class ArchitectSolver(Solver):
@@ -39,6 +64,7 @@ class ArchitectSolver(Solver):
 
         aggregates: dict[tuple[tuple[int, ...], ...], dict] = {}
 
+        # 1) transform task (geom + color)
         for record in self._architect.transform(task):
             transformed = record["task"]
             inverse = record["inverse"]
@@ -46,6 +72,7 @@ class ArchitectSolver(Solver):
             transform_key = (meta.get("geom"), meta.get("color_perm"))
 
             prompt = codec.serialize_task(transformed, test_index=0)
+            # 2) token-level DFS inference on transformed prompt
             candidates = _dfs_generate(
                 model,
                 tokenizer,
@@ -62,7 +89,9 @@ class ArchitectSolver(Solver):
                 grid = codec.deserialize_grid(text)
                 if grid is None:
                     continue
+                # 3) inverse transform back to canonical space
                 grid = inverse(grid)
+                # 4) canonicalize & aggregate
                 key = tuple(tuple(row) for row in grid)
                 entry = aggregates.setdefault(
                     key,
@@ -83,6 +112,7 @@ class ArchitectSolver(Solver):
                 entry["transforms"].append(meta)
 
         candidates_out: list[Candidate] = []
+        # 5) score each grid
         for entry in aggregates.values():
             transform_means = []
             for stats in entry["transform_stats"].values():
@@ -102,6 +132,21 @@ class ArchitectSolver(Solver):
             )
 
         return candidates_out
+
+
+def _extract_assistant_content(text: str, prompt: str) -> str:
+    if text.startswith(prompt):
+        text = text[len(prompt) :]
+
+    marker = "<|im_start|>assistant"
+    if marker in text:
+        text = text.split(marker, 1)[1]
+
+    end_markers = ["<|im_end|>", "<|im_start|>user"]
+    end_positions = [text.find(mark) for mark in end_markers if text.find(mark) != -1]
+    if end_positions:
+        text = text[: min(end_positions)]
+    return text
 
 
 def _get_backend(base_solver):
