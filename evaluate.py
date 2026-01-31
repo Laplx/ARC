@@ -5,11 +5,11 @@ from __future__ import annotations
 import argparse
 
 from eval import failure, metrics, postprocess, runner, visualize
-from eval.adapters.architects import NVARCArchitect
-from eval.adapters.codec import GridCodec
-from eval.adapters.datasets import ARCDataset
-from eval.adapters.models import HuggingFaceTextGenerator
-from eval.adapters.solvers import ArchitectSolver, RawSolver
+from eval.architects import NVARCArchitect
+from eval.codec import GridCodec
+from eval.datasets import ARCDataset
+from eval.models import HuggingFaceTextGenerator
+from eval.solvers import ArchitectSolver, RawSolver
 
 
 MODEL_REGISTRY = {
@@ -37,16 +37,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--split", default="evaluation", choices=["training", "evaluation"])
     parser.add_argument("--model", default="mistral-7b", help="model key or full Hugging Face id")
     parser.add_argument("--max-tasks", type=int, default=0, help="limit tasks (0 for all)")
-    parser.add_argument("--max-new-tokens", type=int, default=256)
+    parser.add_argument("--max-new-tokens", type=int, default=512)
     parser.add_argument("--output-dir", default="outputs")
     parser.add_argument("--use-architect", action="store_true")
+    parser.add_argument("--viz-failures", action="store_true", help="write failure text report")
     args = parser.parse_args(argv)
 
     model_id = MODEL_REGISTRY.get(args.model, args.model)
 
     dataset = ARCDataset(root=args.data_root, split=args.split, max_tasks=args.max_tasks)
     codec = GridCodec()
-    model = HuggingFaceTextGenerator(model_id=model_id, max_new_tokens=args.max_new_tokens)
+    model = HuggingFaceTextGenerator(model_id=model_id, max_new_tokens=args.max_new_tokens) # type: ignore
 
     base_solver = RawSolver(model=model, codec=codec)
     solver = base_solver
@@ -61,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         "output_dir": args.output_dir,
         "model_id": model_id,
         "model_key": args.model,
+        "viz_failures": args.viz_failures,
     }
 
     results = runner.run(
