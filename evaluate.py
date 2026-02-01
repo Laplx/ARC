@@ -75,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
         model_id=model_id,
         model_key=args.model,
         viz_failures=args.viz_failures,
+        max_tasks=args.max_tasks,
+        cleanup_every=1,
     )
 
     if results.get("summary"):

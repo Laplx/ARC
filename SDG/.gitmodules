@@ -1,0 +1,6 @@
+[submodule "external/ARC-AGI-2"]
+	path = external/ARC-AGI-2
+	url = https://github.com/arcprize/ARC-AGI-2
+[submodule "external/re-arc"]
+	path = external/re-arc
+	url = https://github.com/michaelhodel/re-arc
