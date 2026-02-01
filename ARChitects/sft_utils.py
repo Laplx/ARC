@@ -1,4 +1,4 @@
-﻿"""SFT helpers for ARC-style grid prompting."""
+"""SFT helpers for ARC-style grid prompting."""
 
 from __future__ import annotations
 
@@ -39,12 +39,8 @@ class ArcSFTDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         item = self._samples[idx]
-        prompt_ids = self._tokenizer(item["prompt"], add_special_tokens=False)[
-            "input_ids"
-        ]
-        target_ids = self._tokenizer(item["target"], add_special_tokens=False)[
-            "input_ids"
-        ]
+        prompt_ids = self._tokenizer(item["prompt"], add_special_tokens=False)["input_ids"]
+        target_ids = self._tokenizer(item["target"], add_special_tokens=False)["input_ids"]
 
         eos = self._tokenizer.eos_token_id
         input_ids = prompt_ids + target_ids + ([eos] if eos is not None else [])
@@ -69,9 +65,7 @@ def collate_sft(batch: list[dict[str, torch.Tensor]], *, tokenizer) -> dict[str,
     input_ids = torch.nn.utils.rnn.pad_sequence(
         input_ids, batch_first=True, padding_value=tokenizer.pad_token_id
     )
-    labels = torch.nn.utils.rnn.pad_sequence(
-        labels, batch_first=True, padding_value=-100
-    )
+    labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=-100)
     attention_mask = torch.nn.utils.rnn.pad_sequence(
         attention_mask, batch_first=True, padding_value=0
     )

@@ -5,23 +5,23 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from eval.interfaces import Model
 
-
-class HuggingFaceTextGenerator(Model):
+class HuggingFaceTextGenerator:
     def __init__(
         self,
         *,
         model_id: str,
-        max_new_tokens: int = 256,
+        max_new_tokens: int = 512,
         tokenizer_id: str | None = None,
         chat_template_path: str | None = None,
+        local_files_only: bool = False,
     ) -> None:
         os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
         self._model_id = model_id
         self._max_new_tokens = max_new_tokens
         self._tokenizer_id = tokenizer_id
         self._chat_template_path = chat_template_path
+        self._local_files_only = local_files_only
         self._tokenizer = None
         self._model = None
 
@@ -32,7 +32,9 @@ class HuggingFaceTextGenerator(Model):
         import torch
 
         tokenizer_id = self._tokenizer_id or self._model_id
-        self._tokenizer = AutoTokenizer.from_pretrained(tokenizer_id)
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_id, local_files_only=self._local_files_only
+        )
         if self._chat_template_path:
             with open(self._chat_template_path, "r", encoding="utf-8") as handle:
                 self._tokenizer.chat_template = handle.read()
@@ -40,6 +42,7 @@ class HuggingFaceTextGenerator(Model):
             self._model_id,
             dtype=getattr(torch, "bfloat16", None),
             device_map="auto",
+            local_files_only=self._local_files_only,
         )
 
     def predict(self, inputs: Any, *, context=None) -> Any:
@@ -56,7 +59,7 @@ class HuggingFaceTextGenerator(Model):
         return self._model, self._tokenizer
 
 
-class HuggingFaceBackendTextGenerator(Model):
+class HuggingFaceBackendTextGenerator:
     """Wrap a preloaded HF model/tokenizer to match the evaluation interface."""
 
     def __init__(self, *, model, tokenizer, max_new_tokens: int = 256) -> None:
