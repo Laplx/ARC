@@ -243,12 +243,12 @@ def convert_synthetic_to_messages(mask: str, seed: int = 42, num_samples: int = 
 
 if __name__ == "__main__":
 
-    output_path = "data/grids_v15"
+    output_path = "data"
     os.makedirs(output_path, exist_ok=True)
 
-    ds = convert_arc_to_messages("external/ARC-AGI-2/data/evaluation/*.json", num_samples=6)
-    ds.save_to_disk(f"{output_path}/arc2_evaluation6")
-    print(ds)
+    # ds = convert_arc_to_messages("external/ARC-AGI-2/data/evaluation/*.json", num_samples=6)
+    # ds.save_to_disk(f"{output_path}/arc2_evaluation")
+    # print(ds)
 
     ds = convert_rearc_to_messages(seed=1)
     ds.save_to_disk(f"{output_path}/rearc")
@@ -258,18 +258,18 @@ if __name__ == "__main__":
     ds.save_to_disk(f"{output_path}/arc2_training")
     print(ds)
 
-    ds = convert_arc_to_messages("external/MINI-ARC/data/MiniARC/*.json", seed=4)
-    ds.save_to_disk(f"{output_path}/mini")
-    print(ds)
+    # ds = convert_arc_to_messages("external/MINI-ARC/data/MiniARC/*.json", seed=4)
+    # ds.save_to_disk(f"{output_path}/mini")
+    # print(ds)
 
-    ds = convert_arc_to_messages("external/ConceptARC/corpus/*/*.json", seed=5)
-    ds.save_to_disk(f"{output_path}/concept")
-    print(ds)
+    # ds = convert_arc_to_messages("external/ConceptARC/corpus/*/*.json", seed=5)
+    # ds.save_to_disk(f"{output_path}/concept")
+    # print(ds)
 
-    ds = convert_synthetic_to_messages("synthetic/pairs/nvarc_training/*/*.json", seed=6, num_samples=24)
+    ds = convert_synthetic_to_messages("external/NVARCsynthetic/nvarc_training/*/*.json", seed=6, num_samples=24)
     ds.save_to_disk(f"{output_path}/nvarc_training")
     print(ds)
 
-    ds = convert_synthetic_to_messages("synthetic/pairs/nvarc_full/*/*.json", seed=7, num_samples=32)
-    ds.save_to_disk(f"{output_path}/nvarc_full")
-    print(ds)
+    # ds = convert_synthetic_to_messages("external/NVARCsynthetic/nvarc_full/*/*.json", seed=7, num_samples=32)
+    # ds.save_to_disk(f"{output_path}/nvarc_full")
+    # print(ds)

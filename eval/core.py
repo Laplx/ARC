@@ -83,6 +83,11 @@ class ARCDataset:
                 payload = json.load(handle)
             task_id = os.path.splitext(os.path.basename(path))[0]
             payload["task_id"] = task_id
+            tests = payload.get("test") or []
+            if len(tests) > 1:
+                train = payload.get("train") or []
+                payload["train"] = train + tests[1:]
+                payload["test"] = tests[:1]
             yield payload
 
     def info(self) -> dict:
@@ -170,6 +175,8 @@ def run_evaluation(
     model_id: str | None = None,
     model_key: str | None = None,
     viz_failures: bool = False,
+    max_tasks: int = 0,
+    cleanup_every: int = 1,
 ) -> dict:
     dataset_info = dataset.info() if hasattr(dataset, "info") else {}
     task_records: list[dict[str, Any]] = []
@@ -177,6 +184,8 @@ def run_evaluation(
     failures: list[dict[str, Any]] = []
 
     for index, task in enumerate(dataset):
+        if max_tasks and max_tasks > 0 and index >= max_tasks:
+            break
         context = {"index": index}
         raw_outputs = solver.solve(task, context=context)
         candidates = _as_list(raw_outputs)
@@ -207,6 +216,20 @@ def run_evaluation(
         else:
             status = "unscored"
         print(f"[eval] task={task_id} status={status}")
+        # if status == "wrong":
+        #     print(f"[eval] task={task_id} prediction={_grid_to_text(_normalize_prediction(prediction))}")
+        #     print(f"[eval] task={task_id} truth={_grid_to_text(truth)}")
+
+        # if cleanup_every and (index + 1) % cleanup_every == 0:
+        #     try:
+        #         import gc
+        #         import torch
+
+        #         gc.collect()
+        #         if torch.cuda.is_available():
+        #             torch.cuda.empty_cache()
+        #     except Exception:
+        #         pass
         
         task_records.append(
             {
