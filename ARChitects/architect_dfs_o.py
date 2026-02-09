@@ -1,5 +1,3 @@
-"""NVARC-style architect DFS utilities for notebooks."""
-
 from __future__ import annotations
 
 import math
@@ -8,7 +6,7 @@ from typing import Mapping
 
 import torch
 
-from eval.core import GridCodec
+from eval.core_C import GridCodec
 from eval.models import HuggingFaceTextGenerator
 
 MODEL_REGISTRY = {
@@ -132,6 +130,11 @@ def _canonical_key(candidate: dict) -> str:
 
 
 class NVARCArchitect:
+    """
+    与原版不同：我们仍保留变换集，但只用来评分，不再在生成阶段复制任务。
+    transform() 现在同时返回正变换（forward）和逆变换（inverse）便于双向应用。
+    """
+
     def transform(self, task: dict) -> list[dict]:
         colors = _collect_colors(task)
         color_perms = _color_permutations(colors)
@@ -141,6 +144,9 @@ class NVARCArchitect:
                 inv_map = _invert_map(perm_map)
 
                 def _inverse(grid, g=inv_geom, m=inv_map):
+                    return _apply_color(g(grid), m)
+
+                def _forward(grid, g=geom_fn, m=perm_map):
                     return _apply_color(g(grid), m)
 
                 transformed_task = {
@@ -157,6 +163,7 @@ class NVARCArchitect:
                 transforms.append(
                     {
                         "task": transformed_task,
+                        "forward": _forward,
                         "inverse": _inverse,
                         "meta": {"geom": geom_name, "color_perm": perm_name},
                     }
@@ -184,10 +191,15 @@ class NVARCArchitect:
 
 def _allowed_token_ids(tokenizer) -> list[int]:
     allowed: set[int] = set()
-    for ch in "0123456789\n":
+    for ch in "0123456789Ċ":
         ids = tokenizer.encode(ch, add_special_tokens=False)
-        if len(ids) == 1:
-            allowed.add(ids[0])
+        allowed.update(ids)
+        
+    end_token_ids = {
+        tokenizer.convert_tokens_to_ids("<|im_end|>"),
+        tokenizer.convert_tokens_to_ids("<|endoftext|>"),
+    }
+    allowed.update(end_token_ids)
     return sorted(allowed)
 
 
@@ -207,7 +219,16 @@ def _dfs_generate(
         return []
 
     encoded = tokenizer(prompt, return_tensors="pt")
-    encoded = {k: v.to(model.device) for k, v in encoded.items()}
+    device = model.device
+    encoded = {k: v.to(device) for k, v in encoded.items()}
+    print(
+        "[architect_dfs_o] DFS start",
+        f"device={device}",
+        f"allowed={len(allowed_ids)}",
+        f"max_steps={max_steps}",
+        f"top_k={top_k}",
+        f"max_nodes={max_nodes}",
+    )
 
     start_ids = encoded["input_ids"]
     stack: list[tuple[torch.Tensor, float, list[int]]] = [(start_ids, 0.0, [])]
@@ -242,11 +263,68 @@ def _dfs_generate(
                     continue
                 next_ids = torch.tensor([[tid]], device=input_ids.device)
                 stack.append((torch.cat([input_ids, next_ids], dim=1), new_score, new_generated))
+            if nodes % 100 == 0:
+                print(
+                    f"[architect_dfs_o] DFS progress: nodes={nodes}, results={len(results)}, stack={len(stack)}"
+                )
 
     return results
 
 
+def _logprob_given(
+    model,
+    tokenizer,
+    prompt: str,
+    target_text: str,
+    *,
+    allowed_ids: set[int] | None = None,
+) -> float:
+    """
+    计算在给定 prompt 下逐 token teacher-forcing 生成 target_text 的对数概率总和。
+    若出现不在 allowed_ids 的 token，则返回 -inf。
+    """
+
+    encoded = tokenizer(prompt, return_tensors="pt")
+    input_ids = encoded["input_ids"].to(model.device)
+    attention_mask = encoded.get("attention_mask")
+    if attention_mask is not None:
+        attention_mask = attention_mask.to(model.device)
+
+    target_ids = tokenizer.encode(target_text, add_special_tokens=False)
+    if allowed_ids is not None:
+        for tid in target_ids:
+            if tid not in allowed_ids:
+                return float("-inf")
+
+    logprob = 0.0
+    with torch.no_grad():
+        for step, tid in enumerate(target_ids, 1):
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            next_logits = outputs.logits[:, -1, :]
+            next_logprobs = torch.log_softmax(next_logits, dim=-1)
+            logprob += next_logprobs[0, tid].item()
+            next_token = torch.tensor([[tid]], device=input_ids.device)
+            input_ids = torch.cat([input_ids, next_token], dim=1)
+            if attention_mask is not None:
+                attention_mask = torch.cat(
+                    [attention_mask, torch.ones_like(next_token, device=input_ids.device)], dim=1
+                )
+            if step <= 3 or step == len(target_ids):
+                # 打印前几步与最后一步，便于观察概率
+                print(
+                    f"[architect_dfs_o] logprob step {step}/{len(target_ids)} "
+                    f"tid={tid} lp={next_logprobs[0, tid].item():.3f}"
+                )
+    return logprob
+
+
 class ArchitectSolver:
+    """
+    变体版本：
+    - 生成阶段只在原任务上 DFS 一次。
+    - 评分阶段对每个候选解遍历所有几何+颜色变换，计算平均对数生成概率。
+    """
+
     def __init__(
         self,
         *,
@@ -254,12 +332,12 @@ class ArchitectSolver:
         tokenizer,
         codec: GridCodec,
         architect: NVARCArchitect,
-        max_steps: int = 128,
-        max_candidates: int = 20,
+        max_steps: int = 931,
+        max_candidates: int = 16,
         top_k: int = 5,
-        max_nodes: int = 512,
-        min_prob: float = 0.05,
-        lambda_weight: float = 0.0,
+        max_nodes: int = 1024,
+        min_prob: float = 0,
+        lambda_weight: float = 0.0,  # 保留参数但评分中不再使用 count
     ) -> None:
         self._model = model
         self._tokenizer = tokenizer
@@ -274,67 +352,123 @@ class ArchitectSolver:
         self._allowed_ids = _allowed_token_ids(tokenizer)
 
     def solve(self, task, *, context: Mapping[str, object] | None = None):
-        aggregates: dict[tuple[tuple[int, ...], ...], dict] = {}
+        print("[architect_dfs_o] start solve")
+        # 1) 预生成：仅对原任务做一次 DFS，得到候选网格。
+        prompt_orig = self._codec.serialize_task(task, test_index=0)
+        print("[architect_dfs_o] prompt sample (orig):")
+        print(prompt_orig[:300] + ("..." if len(prompt_orig) > 300 else ""))
+        print("[architect_dfs_o] running DFS on original task")
+        raw_candidates = _dfs_generate(
+            self._model,
+            self._tokenizer,
+            prompt_orig,
+            allowed_ids=self._allowed_ids,
+            max_steps=self._max_steps,
+            max_candidates=self._max_candidates,
+            top_k=self._top_k,
+            max_nodes=self._max_nodes,
+            min_prob=self._min_prob,
+        )
+        print(f"[architect_dfs_o] DFS done, raw candidates: {len(raw_candidates)}")
+        if raw_candidates:
+            for i, (txt, lp) in enumerate(raw_candidates[:3], 1):
+                print(f"[architect_dfs_o] raw cand {i}: logprob={lp:.2f}")
+                print(txt[:200])
 
-        for record in self._architect.transform(task):
-            transformed = record["task"]
-            inverse = record["inverse"]
-            meta = record.get("meta", {})
-            transform_key = (meta.get("geom"), meta.get("color_perm"))
+        # 解析为网格
+        parsed_candidates = []
+        for text, logprob in raw_candidates:
+            grid = self._codec.deserialize_grid(text)
+            if grid is None:
+                print("[architect_dfs_o] deserialize failed, text head:", text[:120])
+                continue
+            parsed_candidates.append((grid, logprob))
 
-            prompt = self._codec.serialize_task(transformed, test_index=0)
-            candidates = _dfs_generate(
-                self._model,
-                self._tokenizer,
-                prompt,
-                allowed_ids=self._allowed_ids,
-                max_steps=self._max_steps,
-                max_candidates=self._max_candidates,
-                top_k=self._top_k,
-                max_nodes=self._max_nodes,
-                min_prob=self._min_prob,
-            )
-
-            for text, logprob in candidates:
-                grid = self._codec.deserialize_grid(text)
-                if grid is None:
-                    continue
-                grid = inverse(grid)
-                key = tuple(tuple(row) for row in grid)
-                entry = aggregates.setdefault(
-                    key,
-                    {
-                        "grid": grid,
-                        "count": 0,
-                        "transform_stats": {},
-                        "transforms": [],
-                    },
+        print(f"[architect_dfs_o] parsed candidates: {len(parsed_candidates)}")
+        
+        if not parsed_candidates:
+            # 如果首次 DFS 没有解析出候选，尝试放宽条件重试几次
+            max_retries = 1
+            for retry in range(1, max_retries + 1):
+                print(f"[architect_dfs_o] no candidates, retry {retry}/{max_retries}")
+                raw_candidates = _dfs_generate(
+                    self._model,
+                    self._tokenizer,
+                    prompt_orig,
+                    allowed_ids=self._allowed_ids,
+                    max_steps=self._max_steps,
+                    max_candidates=self._max_candidates,
+                    top_k=len(self._allowed_ids), # min(self._top_k + retry * 2, len(self._allowed_ids)),
+                    max_nodes=self._max_nodes, # self._max_nodes * (retry + 1),
+                    min_prob=max(self._min_prob / (retry + 1) ** 2, 0.0), # max(self._min_prob / (retry + 1) ** 2, 0.0),
                 )
-                entry["count"] += 1
-                stats = entry["transform_stats"].setdefault(
-                    transform_key, {"logprob_sum": 0.0, "count": 0}
+                parsed_candidates = []
+                for text, logprob in raw_candidates:
+                    grid = self._codec.deserialize_grid(text)
+                    if grid is None:
+                        print(
+                            "[architect_dfs_o] retry deserialize failed, text head:",
+                            text[:120],
+                        )
+                        continue
+                    parsed_candidates.append((grid, logprob))
+                print(
+                    f"[architect_dfs_o] retry {retry} parsed candidates: {len(parsed_candidates)}"
                 )
-                stats["logprob_sum"] += float(logprob)
-                stats["count"] += 1
-                entry["transforms"].append(meta)
+                if parsed_candidates:
+                    break
 
+        if not parsed_candidates:
+            return []
+
+        # 2) 评分：对每个候选，遍历所有变换，计算平均对数概率
         candidates_out: list[dict] = []
-        for entry in aggregates.values():
-            transform_means = []
-            for stats in entry["transform_stats"].values():
-                transform_means.append(stats["logprob_sum"] / stats["count"])
-            mean_logprob = (
-                sum(transform_means) / len(transform_means) if transform_means else float("-inf")
+        
+        # 若只有一个候选，直接返回，不再耗时评分
+        if len(parsed_candidates) == 1:
+            grid, lp0 = parsed_candidates[0]
+            print("[architect_dfs_o] single candidate, skip scoring")
+            candidates_out.append({"grid": grid, "score": lp0, "meta": {"single": True}})
+            return candidates_out
+        
+        transforms = self._architect.transform(task)
+        print(f"[architect_dfs_o] transforms to score: {len(transforms)}")
+        allowed_set = set(self._allowed_ids)
+
+        for idx, (grid, _) in enumerate(parsed_candidates, 1):
+            print(f"[architect_dfs_o] scoring candidate {idx}/{len(parsed_candidates)}")
+            logprobs: list[float] = []
+            for t_idx, record in enumerate(transforms, 1):
+                transformed_task = record["task"]
+                forward = record["forward"]
+                prompt_t = self._codec.serialize_task(transformed_task, test_index=0)
+                transformed_grid = forward(grid)
+                target_text = self._codec.grid_to_text(transformed_grid)
+                lp = _logprob_given(
+                    self._model,
+                    self._tokenizer,
+                    prompt_t,
+                    target_text,
+                    allowed_ids=allowed_set,
+                )
+                logprobs.append(lp)
+                if t_idx % 4 == 0 or t_idx == len(transforms):
+                    print(
+                        f"[architect_dfs_o] candidate {idx} scored {t_idx}/{len(transforms)} transforms"
+                    )
+
+            mean_logprob = sum(logprobs) / len(logprobs) if logprobs else float("-inf")
+            print(
+                f"[architect_dfs_o] candidate {idx} mean_logprob={mean_logprob:.2f} "
+                f"min={min(logprobs):.2f} max={max(logprobs):.2f}"
             )
-            score = mean_logprob + self._lambda_weight * entry["count"]
             candidates_out.append(
                 {
-                    "grid": entry["grid"],
-                    "score": score,
+                    "grid": grid,
+                    "score": mean_logprob,  # 仅平均对数概率
                     "meta": {
-                        "count": entry["count"],
                         "mean_logprob": mean_logprob,
-                        "transforms": entry["transforms"],
+                        "transform_logprobs": logprobs,
                     },
                 }
             )
@@ -347,11 +481,11 @@ def build_architect_solver(
     model_key: str,
     model_path: str | None = None,
     tokenizer_path: str | None = None,
-    max_new_tokens: int = 512,
-    max_steps: int = 128,
-    max_candidates: int = 50,
+    max_new_tokens: int = 931,
+    max_steps: int = 931,
+    max_candidates: int = 16,
     top_k: int = 5,
-    max_nodes: int = 512,
+    max_nodes: int = 1024,
     min_prob: float = 0.05,
     lambda_weight: float = 0.0,
 ):
@@ -363,6 +497,18 @@ def build_architect_solver(
         local_files_only=from_local,
     )
     model, tokenizer = generator.get_backend()
+    # 确保尽量使用 GPU
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            target_device = torch.device("cuda")
+            model = model.to(target_device)
+            print("[architect_dfs_o] model moved to", target_device)
+        else:
+            print("[architect_dfs_o] cuda not available, stay on CPU")
+    except Exception as exc:  # 防止因模型分布式加载报错
+        print(f"[architect_dfs_o] warn: failed to move model to cuda: {exc}")
     return ArchitectSolver(
         model=model,
         tokenizer=tokenizer,
@@ -375,4 +521,3 @@ def build_architect_solver(
         min_prob=min_prob,
         lambda_weight=lambda_weight,
     )
-

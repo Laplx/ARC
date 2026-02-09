@@ -1,4 +1,12 @@
 models/
+SDG/data/
+SDG/external/
+outputs/arc_lora_sft_C/checkpoint-*/
+outputs/arc_lora_sft_C/lora_merged_model/
+outputs/models_n/
+NVARC-main/
+MuST/
+checkpoint-61000/
 
 .vscode/
 .serena/

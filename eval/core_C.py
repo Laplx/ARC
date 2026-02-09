@@ -8,12 +8,36 @@ import json
 import os
 import re
 
-_ALLOWED_CHARS = set("0123456789\n")
+
+from pathlib import Path
+LOG_PATH = Path("outputs/architect_beam.log")
+
+def _log_print(*args, **kwargs):
+    msg = " ".join(str(a) for a in args)
+    _ORIG_PRINT(*args, **kwargs)
+    try:
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
+import builtins
+
+# 防止重复包裹：仅首次保存原 print
+if not hasattr(builtins, "_orig_print_archbeam"):
+    builtins._orig_print_archbeam = builtins.__dict__["print"]
+
+_ORIG_PRINT = builtins._orig_print_archbeam
+builtins.print = _log_print
+
+
+_ALLOWED_CHARS = set("0123456789Ċ")
 
 
 class GridCodec:
     def grid_to_text(self, grid: list[list[int]]) -> str:
-        return "\n".join("".join(str(cell) for cell in row) for row in grid)
+        return "Ċ".join("".join(str(cell) for cell in row) for row in grid)
 
     def serialize_task(self, task: dict, *, test_index: int = 0) -> str:
         segments: list[str] = []
@@ -21,25 +45,28 @@ class GridCodec:
             grid_in = self.grid_to_text(pair["input"])
             grid_out = self.grid_to_text(pair["output"])
             segments.append(
-                f"<|im_start|>user\n{grid_in}<|im_end|><|im_start|>assistant\n{grid_out}<|im_end|>"
+                f"<|im_start|>userĊ{grid_in}<|im_end|><|im_start|>assistantĊ{grid_out}<|im_end|>"
             )
 
         test_items = task.get("test", [])
         if not test_items:
-            return "\n".join(segments)
+            return "Ċ".join(segments)
 
         grid_in = self.grid_to_text(test_items[test_index]["input"])
-        segments.append(f"<|im_start|>user\n{grid_in}<|im_end|><|im_start|>assistant\n")
-        return "\n".join(segments)
+        segments.append(f"<|im_start|>userĊ{grid_in}<|im_end|><|im_start|>assistantĊ")
+        return "Ċ".join(segments)
 
     def deserialize_grid(self, text: str) -> list[list[int]] | None:
         # keep only allowed chars (digits + our newline marker) and strip leading/trailing separators
-        filtered = "".join(ch for ch in text if ch in _ALLOWED_CHARS).strip("\n")
+        # unify newline markers and keep only allowed chars
+        text = text.replace("\n", "Ċ")
+        text = text.replace("<|im_end|>", "Ċ")
+        filtered = "".join(ch for ch in text if ch in _ALLOWED_CHARS).strip("Ċ")
         print(f"Deserializing grid from text:\n{filtered}\n")
         if not filtered:
             return None
 
-        lines = filtered.split("\n")
+        lines = filtered.split("Ċ")
         rows: list[list[int]] = []
 
         # Extract only the first contiguous block of consistent-width rows.
@@ -68,13 +95,14 @@ class GridCodec:
         if len(rows) > 30:
             rows = rows[:30]
         return rows
-
+    
 
 class ARCDataset:
-    def __init__(self, *, root: str, split: str, max_tasks: int = 0) -> None:
+    def __init__(self, *, root: str, split: str, max_tasks: int = 0, start_from: int = 0) -> None:
         self._root = root
         self._split = split
         self._max_tasks = max_tasks
+        self._start_from = start_from
         self._files = self._collect_files()
 
     def _collect_files(self) -> list[str]:
@@ -87,8 +115,11 @@ class ARCDataset:
             if name.endswith(".json")
         ]
         files.sort()
+        
         if self._max_tasks and self._max_tasks > 0:
             return files[: self._max_tasks]
+        if self._start_from and self._start_from > 0:
+            return files[self._start_from :]
         return files
 
     def __iter__(self) -> Iterable[dict]:
@@ -202,7 +233,7 @@ def run_evaluation(
             break
         context = {"index": index}
         raw_outputs = solver.solve(task, context=context)
-        print(raw_outputs)
+        print(f"raw_outputs: {raw_outputs}")
         candidates = _as_list(raw_outputs)
         prediction = _select_candidate(candidates)
 
