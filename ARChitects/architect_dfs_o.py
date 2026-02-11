@@ -284,37 +284,50 @@ def _logprob_given(
     若出现不在 allowed_ids 的 token，则返回 -inf。
     """
 
-    encoded = tokenizer(prompt, return_tensors="pt")
+    # 编码整个序列
+    encoded = tokenizer(prompt + target_text, return_tensors="pt")
     input_ids = encoded["input_ids"].to(model.device)
     attention_mask = encoded.get("attention_mask")
     if attention_mask is not None:
         attention_mask = attention_mask.to(model.device)
-
-    target_ids = tokenizer.encode(target_text, add_special_tokens=False)
+    
+    # 编码 prompt 部分
+    prompt_encoded = tokenizer(prompt, return_tensors="pt")
+    prompt_len = prompt_encoded["input_ids"].size(1)
+    target_len = input_ids.size(1) - prompt_len
+    
+    # 检查 allowed_ids
     if allowed_ids is not None:
+        target_ids = input_ids[0, prompt_len:].tolist()
         for tid in target_ids:
             if tid not in allowed_ids:
                 return float("-inf")
-
-    logprob = 0.0
+    
     with torch.no_grad():
-        for step, tid in enumerate(target_ids, 1):
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            next_logits = outputs.logits[:, -1, :]
-            next_logprobs = torch.log_softmax(next_logits, dim=-1)
-            logprob += next_logprobs[0, tid].item()
-            next_token = torch.tensor([[tid]], device=input_ids.device)
-            input_ids = torch.cat([input_ids, next_token], dim=1)
-            if attention_mask is not None:
-                attention_mask = torch.cat(
-                    [attention_mask, torch.ones_like(next_token, device=input_ids.device)], dim=1
-                )
-            if step <= 3 or step == len(target_ids):
+        # 单次前向传播计算所有 token 的 logits
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+        logits = outputs.logits
+        
+        # 计算每个目标 token 的对数概率
+        logprobs = torch.log_softmax(logits, dim=-1)
+        
+        # 提取目标 token 对应的对数概率
+        target_logprobs = []
+        for i in range(target_len):
+            pos = prompt_len - 1 + i
+            tid = input_ids[0, pos + 1].item()
+            lp = logprobs[0, pos, tid].item()
+            target_logprobs.append((tid, lp))
+            
+            if i < 3 or i == target_len - 1:
                 # 打印前几步与最后一步，便于观察概率
                 print(
-                    f"[architect_dfs_o] logprob step {step}/{len(target_ids)} "
-                    f"tid={tid} lp={next_logprobs[0, tid].item():.3f}"
+                    f"[architect_beam] logprob step {i+1}/{target_len} "
+                    f"tid={tid} lp={lp:.3f}"
                 )
+    
+    # 求和
+    logprob = sum(lp for _, lp in target_logprobs)
     return logprob
 
 
