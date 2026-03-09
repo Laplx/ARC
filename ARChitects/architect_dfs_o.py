@@ -9,6 +9,30 @@ import torch
 from eval.core_C import GridCodec
 from eval.models import HuggingFaceTextGenerator
 
+
+from pathlib import Path
+LOG_PATH = Path("outputs/architect_cand.log")
+
+def _log_print(*args, **kwargs):
+    msg = " ".join(str(a) for a in args)
+    _ORIG_PRINT(*args, **kwargs)
+    try:
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
+import builtins
+
+# 防止重复包裹：仅首次保存原 print
+if not hasattr(builtins, "_orig_print_archbeam"):
+    builtins._orig_print_archbeam = builtins.__dict__["print"]
+
+_ORIG_PRINT = builtins._orig_print_archbeam
+builtins.print = _log_print
+
+
 MODEL_REGISTRY = {
     "mistral-7b": "mistralai/Mistral-7B-Instruct-v0.3",
     "qwen3-4b-thinking": "Qwen/Qwen3-4B-Thinking-2507",
@@ -413,7 +437,7 @@ class ArchitectSolver:
                     max_candidates=self._max_candidates,
                     top_k=len(self._allowed_ids), # min(self._top_k + retry * 2, len(self._allowed_ids)),
                     max_nodes=self._max_nodes, # self._max_nodes * (retry + 1),
-                    min_prob=max(self._min_prob / (retry + 1) ** 2, 0.0), # max(self._min_prob / (retry + 1) ** 2, 0.0),
+                    min_prob=max(self._min_prob / (retry + 1) ** 4, 0.0), # max(self._min_prob / (retry + 1) ** 2, 0.0),
                 )
                 parsed_candidates = []
                 for text, logprob in raw_candidates:
